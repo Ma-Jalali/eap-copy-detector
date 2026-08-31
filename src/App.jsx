@@ -276,7 +276,7 @@ export default function App() {
     navigator.clipboard.writeText(text).then(() => setToast("Summary copied!"));
   };
 
-  const pctOwn = ((result.total - result.copied) / result.total) * 100;
+  const pctOwn = result ? ((result.total - result.copied) / result.total) * 100 : 0;
 
   return (
     <div style={{ background: SAND, minHeight: "100vh" }}>
