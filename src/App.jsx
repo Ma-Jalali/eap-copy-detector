@@ -141,12 +141,6 @@ function analyse(essay, sources, minW, ignoreQuotes) {
   };
 }
 
-function verdictFor(pct) {
-  if (pct < 10) return { label: "Lightly borrowed", color: "#3F6B39", msg: "Very little wording is carried over. Check that anything highlighted is quoted and cited." };
-  if (pct < 25) return { label: "Moderately borrowed", color: "#A87410", msg: "Some source wording remains. Rewrite the longer highlighted passages in your own words." };
-  return { label: "Heavily borrowed", color: RED, msg: "Much of this essay reuses source wording. It needs substantial rewriting before you submit it." };
-}
-
 /* ═══════════ ICONS ═══════════ */
 const svg = (paths, c, s, extra) => (
   <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.7"
@@ -162,7 +156,35 @@ const I = {
   plus: (c, s = 14) => svg(["M12 5v14", "M5 12h14"], c, s),
   x: (c, s = 14) => svg(["M18 6L6 18", "M6 6l12 12"], c, s),
   back: (c, s = 14) => svg(["M19 12H5", "M12 19l-7-7 7-7"], c, s),
+  search: (c, s = 14) => svg(["M21 21l-4.3-4.3"], c, s, <circle cx="11" cy="11" r="7" />),
+  book: (c, s = 14) => svg(["M2 4h6a4 4 0 0 1 4 4v12a3 3 0 0 0-3-3H2z", "M22 4h-6a4 4 0 0 0-4 4v12a3 3 0 0 1 3-3h7z"], c, s),
+  info: (c, s = 14) => svg(["M12 16v-4.5", "M12 8.2h.01"], c, s, <circle cx="12" cy="12" r="9" />),
 };
+
+/* a small hint that appears on hover or keyboard focus */
+function Hint({ tip, left }) {
+  return (
+    <span className={`tip${left ? " tip-l" : ""}`} data-tip={tip} tabIndex={0} role="note" aria-label={tip}
+          style={{ display: "inline-flex", alignItems: "center", lineHeight: 0, cursor: "help", color: TEXT_3 }}>
+      {I.info("currentColor", 14)}
+    </span>
+  );
+}
+
+/* ═══════════ MARK — two leaves, one shared line ═══════════ */
+function Emblem({ s = 32 }) {
+  return (
+    <svg width={s} height={s} viewBox="0 0 32 32" fill="none" aria-hidden="true" style={{ flexShrink: 0, display: "block" }}>
+      <rect x="12.5" y="3.5" width="15" height="19" rx="1" stroke="rgba(255,255,255,.42)" strokeWidth="1.25" />
+      <path d="M16 8h8M16 11.5h8" stroke="rgba(255,255,255,.3)" strokeWidth="1.25" strokeLinecap="round" />
+      <path d="M21 15h3M21 18.5h3" stroke="rgba(255,255,255,.3)" strokeWidth="1.25" strokeLinecap="round" />
+      <path d="M22 15h2" stroke={RED} strokeWidth="2.2" strokeLinecap="round" />
+      <rect x="4.5" y="9.5" width="15" height="19" rx="1" fill={INK} stroke="rgba(255,255,255,.88)" strokeWidth="1.25" />
+      <path d="M8 14h8M8 17.5h8M8 24.5h5" stroke="rgba(255,255,255,.42)" strokeWidth="1.25" strokeLinecap="round" />
+      <path d="M8 21h8" stroke={RED} strokeWidth="2.2" strokeLinecap="round" />
+    </svg>
+  );
+}
 
 /* ═══════════ MARKED TEXT ═══════════ */
 function MarkedText({ text, regions, sentences, activeId, onPick, pane }) {
@@ -200,9 +222,12 @@ function MarkedText({ text, regions, sentences, activeId, onPick, pane }) {
     const on = r.ns.includes(activeId);
     const label = r.ns.join(",");
     out.push(
-      <mark key={`m${k}`} data-pane={pane} data-marks={r.ns.join(" ")} onClick={() => onPick(r.ns[0])}
+      <mark key={`m${k}`} className="mk" data-pane={pane} data-marks={r.ns.join(" ")} onClick={() => onPick(r.ns[0])}
+        tabIndex={0} role="button"
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(r.ns[0]); } }}
         title={r.ns.length > 1 ? `Matches ${label}` : `Match ${label}, ${r.words} words`}
         style={{
+          "--glow": c.glow,
           background: on ? c.glow : c.fill,
           color: TEXT,
           borderBottom: `2px solid ${c.line}`,
@@ -312,6 +337,7 @@ export default function App() {
     res.essay = essay;
     res.srcTexts = used.map((s) => s.text);
     res.names = used.map((s, i) => s.name.trim() || `Reading ${i + 1}`);
+    res.minW = minW;
     setResult(res);
     setActiveId(res.matches.length ? 1 : null);
     setOpenSrc(res.matches.length ? res.matches[0].src : 0);
@@ -336,6 +362,20 @@ export default function App() {
     const next = Math.min(result.matches.length, Math.max(1, (activeId || 1) + d));
     pick(next);
   };
+
+  /* left and right arrows step between matches */
+  useEffect(() => {
+    if (!result || !result.matches.length) return;
+    const onKey = (e) => {
+      const t = e.target;
+      if (e.altKey || e.ctrlKey || e.metaKey) return;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      if (e.key === "ArrowRight") { e.preventDefault(); step(1); }
+      else if (e.key === "ArrowLeft") { e.preventDefault(); step(-1); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
 
   /* scroll both leaves to the selected match */
   useEffect(() => {
@@ -389,7 +429,6 @@ export default function App() {
 
   const saveReport = () => {
     const pctv = (result.copied / result.total) * 100;
-    const v = verdictFor(pctv);
     const esc = (s) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
     const rows = [...result.matches].sort((a, b) => b.words - a.words).map((m) =>
       `<tr><td>${m.n}</td><td>${esc(result.names[m.src])}</td><td>${m.words}</td><td>${esc(result.essay.slice(m.start, m.end))}</td></tr>`).join("");
@@ -397,15 +436,16 @@ export default function App() {
 body{font:15px/1.75 Georgia,serif;max-width:760px;margin:48px auto;padding:0 26px;color:#1C1F1A}
 h1{font-size:25px;margin:0 0 6px;font-weight:600}
 .s{color:#8A9082;font-size:13px;margin-bottom:30px}
-.v{border-left:3px solid ${v.color};padding:4px 0 4px 18px;margin-bottom:26px}
-.v b{font-size:19px;color:${v.color}}
+.v{border-left:3px solid ${INK};padding:4px 0 4px 18px;margin-bottom:26px}
+.v b{font-size:26px;font-weight:600;color:${INK};font-variant-numeric:tabular-nums}
+.v span{display:block;font-size:14px;color:#565C50;margin-top:2px}
 table{width:100%;border-collapse:collapse;font-size:13px;margin-top:10px}
 th,td{text-align:left;padding:9px 8px;border-bottom:1px solid #D7DBD1;vertical-align:top}
 th{font:600 12px/1 Georgia,serif;color:#8A9082}
 </style></head><body><h1>Essay copy report</h1>
 <div class="s">The University of Sydney, ${new Date().toLocaleString()}</div>
-<div class="v"><b>${pctv.toFixed(1)}% ${v.label.toLowerCase()}</b><br>${v.msg}</div>
-<p>${result.copied} of ${result.total} words match the readings word for word, across ${result.matches.length} passages.</p>
+<div class="v"><b>${pctv.toFixed(1)}%</b><span>of the essay is copied word for word from the readings</span></div>
+<p>${result.copied} of ${result.total} words match the readings word for word, across ${result.matches.length} ${result.matches.length === 1 ? "passage" : "passages"}.${result.longest ? ` The longest copied passage runs to ${result.longest.words} words.` : ""}</p>
 <h2 style="font-size:16px;font-weight:600">Matched passages</h2>
 <table><tr><th>No.</th><th>Reading</th><th>Words</th><th>Passage</th></tr>${rows}</table>
 </body></html>`;
@@ -415,7 +455,6 @@ th{font:600 12px/1 Georgia,serif;color:#8A9082}
   };
 
   const pct = result ? (result.copied / result.total) * 100 : 0;
-  const v = verdictFor(pct);
   const leaf = { background: PAPER, border: `1px solid ${RULE}`, boxShadow: "0 1px 1px rgba(34,41,31,.04), 0 14px 30px -20px rgba(34,41,31,.30)" };
 
   return (
@@ -441,6 +480,17 @@ textarea::placeholder{color:${TEXT_3}}
 .leaf::-webkit-scrollbar-track{background:${GROUND_2}}
 .tab{background:transparent;border:none;border-bottom:2px solid transparent;padding:12px 16px;font:500 13.5px/1 inherit;color:${TEXT_3};cursor:pointer;display:flex;align-items:center;gap:9px;white-space:nowrap;transition:color .15s,border-color .15s}
 .tab:hover{color:${TEXT}}
+.mk:hover{background:var(--glow)!important}
+.tip{position:relative}
+.tip::after{content:attr(data-tip);position:absolute;left:50%;bottom:calc(100% + 9px);transform:translate(-50%,3px);background:${INK};color:rgba(255,255,255,.94);font:400 12px/1.5 'Instrument Sans',system-ui,sans-serif;padding:7px 10px;border-radius:3px;width:max-content;max-width:240px;white-space:normal;text-align:left;opacity:0;visibility:hidden;pointer-events:none;z-index:50;box-shadow:0 10px 26px -10px rgba(34,41,31,.45);transition:opacity .15s ease,transform .15s ease,visibility 0s linear .15s}
+.tip::before{content:"";position:absolute;left:50%;bottom:calc(100% + 4px);transform:translateX(-50%);border:5px solid transparent;border-top-color:${INK};border-bottom:0;opacity:0;visibility:hidden;pointer-events:none;z-index:50;transition:opacity .15s ease,visibility 0s linear .15s}
+.tip:hover::after,.tip:focus-visible::after{opacity:1;visibility:visible;transform:translate(-50%,0);transition:opacity .15s ease .3s,transform .15s ease .3s,visibility 0s linear .3s}
+.tip:hover::before,.tip:focus-visible::before{opacity:1;visibility:visible;transition:opacity .15s ease .3s,visibility 0s linear .3s}
+.tip-l::after{left:-4px;transform:translate(0,3px)}
+.tip-l:hover::after,.tip-l:focus-visible::after{transform:translate(0,0)}
+.tip-l::before{left:50%}
+.tip-r::after{left:auto;right:-4px;transform:translate(0,3px)}
+.tip-r:hover::after,.tip-r:focus-visible::after{transform:translate(0,0)}
 .shell{max-width:1460px;margin:0 auto;padding:0 30px}
 .setup{display:grid;grid-template-columns:1.08fr .92fr;gap:26px}
 .spread{display:grid;grid-template-columns:212px 1fr;gap:34px;align-items:start}
@@ -461,12 +511,15 @@ textarea::placeholder{color:${TEXT_3}}
       {/* ── masthead ── */}
       <header style={{ background: INK, color: "#fff", borderBottom: `3px solid ${RED}` }}>
         <div className="shell" style={{ padding: "18px 30px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 20, flexWrap: "wrap" }}>
-          <div>
-            <div style={{ fontFamily: "'Newsreader', Georgia, serif", fontSize: 25, fontWeight: 500, letterSpacing: -0.2 }}>
-              Essay Copy Detector
-            </div>
-            <div style={{ fontSize: 12.5, color: "rgba(255,255,255,.55)", marginTop: 2 }}>
-              The University of Sydney
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <Emblem s={34} />
+            <div>
+              <div style={{ fontFamily: "'Newsreader', Georgia, serif", fontSize: 25, fontWeight: 500, letterSpacing: -0.2 }}>
+                Essay Copy Detector
+              </div>
+              <div style={{ fontSize: 12.5, color: "rgba(255,255,255,.55)", marginTop: 2 }}>
+                The University of Sydney
+              </div>
             </div>
           </div>
           {result ? (
@@ -483,8 +536,8 @@ textarea::placeholder{color:${TEXT_3}}
               </button>
             </div>
           ) : (
-            <button className="btn onink noprint" onClick={tryExample} style={{ padding: "9px 15px", fontSize: 13, fontWeight: 500, borderRadius: 3 }}>
-              Try an example
+            <button className="btn onink noprint" onClick={tryExample} style={{ padding: "9px 15px", fontSize: 13, fontWeight: 500, borderRadius: 3, display: "flex", alignItems: "center", gap: 8 }}>
+              {I.book("rgba(255,255,255,.9)", 14)} Try an example
             </button>
           )}
         </div>
@@ -545,15 +598,19 @@ textarea::placeholder{color:${TEXT_3}}
                 onChange={(e) => setMinW(Math.min(12, Math.max(3, parseInt(e.target.value) || 3)))}
                 style={{ width: 52, padding: "7px 8px", border: `1px solid ${RULE_2}`, fontSize: 14, textAlign: "center", borderRadius: 3, background: PAPER }} />
               <span>words or longer</span>
+              <Hint tip="A run is a stretch of consecutive words that appears, in the same order, in one of the readings. Shorter runs are usually ordinary phrasing and are left unmarked." />
             </div>
-            <label style={{ display: "flex", alignItems: "center", gap: 9, cursor: "pointer", fontSize: 13.5, color: TEXT_2 }}>
-              <input type="checkbox" checked={ignoreQuotes} onChange={(e) => setIgnoreQuotes(e.target.checked)}
-                style={{ accentColor: RED, width: 16, height: 16 }} />
-              Skip anything inside quotation marks
-            </label>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13.5, color: TEXT_2 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 9, cursor: "pointer" }}>
+                <input type="checkbox" checked={ignoreQuotes} onChange={(e) => setIgnoreQuotes(e.target.checked)}
+                  style={{ accentColor: RED, width: 16, height: 16 }} />
+                Skip anything inside quotation marks
+              </label>
+              <Hint tip="Text set between quotation marks is treated as a deliberate quotation and is not counted. It still needs a citation." />
+            </div>
             <button className="btn" onClick={findMatches}
-              style={{ background: RED, color: "#fff", padding: "15px 34px", fontSize: 14.5, fontWeight: 600, marginLeft: "auto", borderRadius: 3 }}>
-              Find matches
+              style={{ background: RED, color: "#fff", padding: "15px 30px 15px 26px", fontSize: 14.5, fontWeight: 600, marginLeft: "auto", borderRadius: 3, display: "flex", alignItems: "center", gap: 10 }}>
+              {I.search("#fff", 16)} Find matches
             </button>
           </div>
         </main>
@@ -570,36 +627,39 @@ textarea::placeholder{color:${TEXT_3}}
                 <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
                   <ColumnMap result={result} activeId={activeId} onPick={pick} />
                   <div>
-                    <div style={{ fontFamily: "'Newsreader', Georgia, serif", fontSize: 34, fontWeight: 500, lineHeight: 1, color: v.color }}>
+                    <div style={{ fontFamily: "'Newsreader', Georgia, serif", fontSize: 36, fontWeight: 500, lineHeight: 1, color: INK, letterSpacing: -0.5, fontVariantNumeric: "tabular-nums" }}>
                       {pct.toFixed(1)}%
                     </div>
-                    <div style={{ fontSize: 13, color: v.color, fontWeight: 600, marginTop: 5, lineHeight: 1.3 }}>{v.label}</div>
+                    <div style={{ fontSize: 13, color: INK, fontWeight: 600, marginTop: 7, lineHeight: 1.35 }}>
+                      copied word for word
+                    </div>
                     <div style={{ fontSize: 12.5, color: TEXT_2, marginTop: 10, lineHeight: 1.55 }}>
                       {result.copied} of {result.total} words<br />in {result.matches.length} {result.matches.length === 1 ? "passage" : "passages"}
+                      {result.longest && <><br />longest run {result.longest.words} words</>}
                     </div>
                   </div>
                 </div>
-
-                <p style={{ fontSize: 13, color: TEXT_2, lineHeight: 1.6, margin: "18px 0 0", paddingTop: 16, borderTop: `1px solid ${RULE_2}` }}>
-                  {v.msg}
-                </p>
               </div>
 
               <div style={{ flex: 1, minWidth: 168 }}>
-                {result.matches.length > 0 && (
+                {result.matches.length > 0 ? (
                   <div className="noprint" style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 18 }}>
-                    <button className="btn quiet" onClick={() => step(-1)} disabled={(activeId || 1) <= 1}
+                    <button className="btn quiet tip tip-l" data-tip="Previous match (left arrow)" onClick={() => step(-1)} disabled={(activeId || 1) <= 1}
                       aria-label="Previous match" style={{ padding: "8px 10px", borderRadius: 3, lineHeight: 0, background: PAPER }}>
                       {I.up(TEXT_2, 15)}
                     </button>
-                    <span style={{ fontSize: 13, color: TEXT_2, flex: 1, textAlign: "center" }}>
+                    <span style={{ fontSize: 13, color: TEXT_2, flex: 1, textAlign: "center", fontVariantNumeric: "tabular-nums" }}>
                       Match {activeId || 1} of {result.matches.length}
                     </span>
-                    <button className="btn quiet" onClick={() => step(1)} disabled={(activeId || 1) >= result.matches.length}
+                    <button className="btn quiet tip tip-r" data-tip="Next match (right arrow)" onClick={() => step(1)} disabled={(activeId || 1) >= result.matches.length}
                       aria-label="Next match" style={{ padding: "8px 10px", borderRadius: 3, lineHeight: 0, background: PAPER }}>
                       {I.down(TEXT_2, 15)}
                     </button>
                   </div>
+                ) : (
+                  <p style={{ fontSize: 13, color: TEXT_2, lineHeight: 1.6, margin: "0 0 18px" }}>
+                    No run of {result.minW} words or longer matches the readings.
+                  </p>
                 )}
 
                 <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
@@ -673,7 +733,7 @@ textarea::placeholder{color:${TEXT_3}}
                         style={{ borderBottomColor: on ? c.line : "transparent", color: on ? TEXT : TEXT_3, fontWeight: on ? 600 : 400 }}>
                         <span style={{ width: 9, height: 9, background: c.line, flexShrink: 0, opacity: on ? 1 : 0.55 }} />
                         {nm}
-                        <span style={{ fontSize: 12, color: TEXT_3 }}>{cnt}</span>
+                        <span style={{ fontSize: 12, color: TEXT_3 }} title={`${cnt} matching ${cnt === 1 ? "passage" : "passages"}`}>{cnt}</span>
                       </button>
                     );
                   })}
